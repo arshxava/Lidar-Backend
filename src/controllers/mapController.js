@@ -4,7 +4,54 @@ const sharp = require("sharp");
 const Map = require("../models/Map");
 const Tile = require("../models/Tile");
 const { sliceMap } = require("../utils/tileSlicer");
+const cloudinary = require("../config/cloudinary"); 
+// const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
+//   const fixedWidth = 1024;
+//   const fixedHeight = 1024;
 
+//   const tileWidth = Math.floor(fixedWidth / cols);
+//   const tileHeight = Math.floor(fixedHeight / rows);
+
+//   const resizedImageBuffer = await sharp(imagePath)
+//     .resize(fixedWidth, fixedHeight)
+//     .toBuffer();
+
+//   if (!fs.existsSync(outputDir)) {
+//     fs.mkdirSync(outputDir, { recursive: true });
+//   }
+
+//   const imageUrls = [];
+//   let tileIndex = 0;
+
+//   for (let row = 0; row < rows; row++) {
+//     for (let col = 0; col < cols; col++) {
+//       const left = col * tileWidth;
+//       const top = row * tileHeight;
+
+//       const width = (col === cols - 1) ? (fixedWidth - left) : tileWidth;
+//       const height = (row === rows - 1) ? (fixedHeight - top) : tileHeight;
+
+//       const tileFileName = `${mapId}_tile_${tileIndex}.png`;
+//       const tilePath = path.join(outputDir, tileFileName);
+
+//       try {
+//         await sharp(resizedImageBuffer)
+//           .extract({ left, top, width, height })
+//           .toFile(tilePath);
+
+//         // console.log(`✅ Tile ${tileIndex} saved → ${tilePath}`);
+//         imageUrls.push(`/uploads/tiles/${tileFileName}`);
+//       } catch (err) {
+//         // console.error(`❌ Tile ${tileIndex} failed:`, err.message);
+//         imageUrls.push(null);
+//       }
+
+//       tileIndex++;
+//     }
+//   }
+
+//   return imageUrls;
+// };
 const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
   const fixedWidth = 1024;
   const fixedHeight = 1024;
@@ -12,10 +59,17 @@ const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
   const tileWidth = Math.floor(fixedWidth / cols);
   const tileHeight = Math.floor(fixedHeight / rows);
 
+  // Check if the image exists
+  if (!fs.existsSync(imagePath)) {
+    throw new Error(`Input image not found at path: ${imagePath}`);
+  }
+
+  // Resize the image
   const resizedImageBuffer = await sharp(imagePath)
     .resize(fixedWidth, fixedHeight)
     .toBuffer();
 
+  // Ensure output directory exists
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
@@ -27,22 +81,32 @@ const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
     for (let col = 0; col < cols; col++) {
       const left = col * tileWidth;
       const top = row * tileHeight;
-
-      const width = (col === cols - 1) ? (fixedWidth - left) : tileWidth;
-      const height = (row === rows - 1) ? (fixedHeight - top) : tileHeight;
+      const width = col === cols - 1 ? fixedWidth - left : tileWidth;
+      const height = row === rows - 1 ? fixedHeight - top : tileHeight;
 
       const tileFileName = `${mapId}_tile_${tileIndex}.png`;
       const tilePath = path.join(outputDir, tileFileName);
 
       try {
+        // Extract tile from buffer and save to file
         await sharp(resizedImageBuffer)
           .extract({ left, top, width, height })
           .toFile(tilePath);
 
-        // console.log(`✅ Tile ${tileIndex} saved → ${tilePath}`);
-        imageUrls.push(`/uploads/tiles/${tileFileName}`);
+        console.log(`🖼️ Tile ${tileIndex} saved locally → ${tilePath}`);
+
+        // Upload tile to Cloudinary
+        const tileCloudRes = await cloudinary.uploader.upload(tilePath, {
+          folder: "tiles",
+          public_id: `${mapId}_tile_${tileIndex}`,
+          resource_type: "image",
+        });
+
+        console.log(`☁️ Tile ${tileIndex} uploaded to Cloudinary → ${tileCloudRes.secure_url}`);
+
+        imageUrls.push(tileCloudRes.secure_url);
       } catch (err) {
-        // console.error(`❌ Tile ${tileIndex} failed:`, err.message);
+        console.error(`❌ Tile ${tileIndex} failed to process: ${err.message}`);
         imageUrls.push(null);
       }
 
@@ -52,7 +116,6 @@ const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
 
   return imageUrls;
 };
-
 exports.uploadMap = async (req, res) => {
   try {
     const { name, minLat, maxLat, minLng, maxLng, tileSizeKm = 10 } = req.body;
@@ -75,8 +138,16 @@ exports.uploadMap = async (req, res) => {
       return res.status(400).json({ msg: "Invalid lat/lng" });
     }
 
-    const fileUrl = `/uploads/maps/${file.filename}`;
-    const imagePath = path.join("uploads/maps", file.filename);
+    // const fileUrl = `/uploads/maps/${file.filename}`;
+    const cloudinaryRes = await cloudinary.uploader.upload(file.path, {
+      folder: "maps",
+      public_id: `${Date.now()}-map`,
+      resource_type: "image",
+    });
+    const fileUrl = cloudinaryRes.secure_url;
+
+ 
+    const imagePath =  file.path;
 
 
     const newMap = await Map.create({
