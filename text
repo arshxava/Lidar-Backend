@@ -1,0 +1,21 @@
+
+env file -
+
+PORT=5000
+MONGO_URI=mongodb+srv://arsh124:PIKAarsh098%3C%3C@cluster0.zyvd0.mongodb.net/
+JWT_SECRET=qweerty    
+CLOUDINARY_CLOUD_NAME=dg3kbwvd9
+CLOUDINARY_API_KEY=639732518733179
+CLOUDINARY_API_SECRET=y3gFvI0TuzbOCoGsb8egae-YMcU
+
+also make a uploads folder inside uploads folder make 2 folders maps and tiles to uploads maps and tiles
+
+/uploads
+├── /maps
+└── /tiles
+
+
+
+to run the server use the command
+npm install
+node server.js
