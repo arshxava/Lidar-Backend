@@ -5,22 +5,17 @@ const Annotation = require("../models/Annotation");
 const fs = require("fs");
 
 const assignTile = async (req, res) => {
-  // console.log("➡️ Tile assignment requested");
 
   const userId = req.user?._id || req.user?.id;
-  // console.log("🔍 Decoded user from token:", req.user);
 
   if (!userId) {
-    // console.warn("❗ No user ID in decoded token");
     return res.status(401).json({ message: "Unauthorized" });
   }
 
   try {
-    // console.log("👤 Assigning tile to user:", userId);
 
     const existingTile = await Tile.findOne({ assignedTo: userId, status: 'in_progress' });
     if (existingTile) {
-      // console.log("📦 Existing tile found:", existingTile._id);
       return res.status(200).json(existingTile);
     }
 
@@ -40,11 +35,9 @@ const assignTile = async (req, res) => {
 
 
     if (!newTile) {
-      // console.warn("❌ No tile available");
       return res.status(404).json({ message: "No available tiles" });
     }
 
-    // console.log("✅ New tile assigned:", newTile._id);
     res.status(200).json(newTile);
   } catch (err) {
     // console.error("🔥 Error in assignTile:", err);
@@ -91,111 +84,19 @@ const skipTile = async (req, res) => {
 };
 
 
-
-
-
-
-// const completeTile = async (req, res) => {
-//   const { tileId } = req.params;
-//   const { annotations } = req.body;
-
-//   if (!annotations || !Array.isArray(annotations)) {
-//     return res.status(400).json({ message: "Annotations are required" });
-//   }
-
-//   try {
-//     const tile = await Tile.findById(tileId);
-//     if (!tile) {
-//       return res.status(404).json({ message: "Tile not found" });
-//     }
-
-//     // Save each annotation and collect their IDs
-//     const savedAnnotations = await Annotation.insertMany(
-//       annotations.map((ann) => ({ ...ann, tile: tile._id }))
-//     );
-
-//     tile.status = "completed";
-//     tile.submittedAt = new Date();
-//     tile.annotations = savedAnnotations.map((a) => a._id);
-
-//     await tile.save();
-
-//     res.status(200).json({ message: "Tile marked complete" });
-//   } catch (err) {
-//     console.error("Tile submission error:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
-
-// const completeTile = async (req, res) => {
-//   const { tileId } = req.params;
-//   const { annotations } = req.body;
-
-//   if (!annotations || !Array.isArray(annotations)) {
-//     return res.status(400).json({ message: "Annotations are required" });
-//   }
-
-//   try {
-//     const tile = await Tile.findById(tileId);
-//     if (!tile) {
-//       return res.status(404).json({ message: "Tile not found" });
-//     }
-
-//     console.log("🧱 tile.imageName:", tile.imageName);
-
-//     // const savedAnnotations = await Annotation.insertMany(
-//     //   annotations.map((ann) => ({ ...ann, tile: tile._id }))
-//     // );
-
-//     const savedAnnotations = await Annotation.insertMany(
-//   annotations.map((ann) => ({
-//     tile: tile._id,
-//     type: ann.type,
-//     data: ann.data, 
-//   }))
-// );
-
-//     const formattedAnnotations = savedAnnotations.map((a) => ({
-//       type: a.type,
-//       points: a.data?.points || [],
-//     }));
-
-
-   
-//     const path = require("path");
-// const originalPath = path.join(process.cwd(), "uploads", "tiles", tile.imageName.trim());
-
-// const generateAnnotatedImage = require("../utils/generatedAnnotatedImage");
-
-//     const annotatedImageUrl = await generateAnnotatedImage(tileId, formattedAnnotations, originalPath);
-
-//     // Update tile
-//     tile.status = "completed";
-//     tile.submittedAt = new Date();
-//     tile.annotations = savedAnnotations.map((a) => a._id);
-//     tile.annotatedImageUrl = annotatedImageUrl;
-
-//     await tile.save();
-
-//     // Update each annotation with image URL (optional)
-//     await Annotation.updateMany(
-//       { tile: tile._id },
-//       { annotatedimageUrl: annotatedImageUrl }
-//     );
-
-//     res.status(200).json({ message: "Tile marked complete", tile });
-//   } catch (err) {
-//     console.error("Tile submission error:", err);
-//     res.status(500).json({ message: "Server error", error: err.message });
-//   }
-// };
-
 const completeTile = async (req, res) => {
-  const { tileId } = req.params;
-  const { annotations } = req.body;
+  console.log("🚀 completeTile API called");
 
-  if (!annotations || !Array.isArray(annotations) || annotations.length === 0) {
-    return res.status(400).json({ message: "Annotations are required and must be an array" });
+  const { tileId } = req.params;
+const { annotationIds, submittedBy, annotationMeta = {} } = req.body;
+
+
+  console.log("📝 tileId:", tileId);
+  console.log("📝 annotationIds:", annotationIds);
+  console.log("📝 submittedBy:", submittedBy);
+
+  if (!annotationIds || !Array.isArray(annotationIds) || annotationIds.length === 0) {
+    return res.status(400).json({ message: "Annotation IDs are required" });
   }
 
   try {
@@ -204,54 +105,57 @@ const completeTile = async (req, res) => {
       return res.status(404).json({ message: "Tile not found" });
     }
 
-    console.log("🧱 tile.imageName:", tile.imageName);
-    console.log("📥 Annotations received:", annotations);
+    console.log("✅ Tile found:", tile);
 
-    // Safely insert annotations to DB
-    const savedAnnotations = await Annotation.insertMany(
-      annotations
-        .filter((ann) => ann && ann.type && ann.data) // safeguard against nulls
-        .map((ann) => ({
-          tile: tile._id,
-          type: ann.type,
-          data: ann.data,
-        }))
-    );
+    // 🔍 Fetch saved annotations by IDs
+    const savedAnnotations = await Annotation.find({ _id: { $in: annotationIds } });
 
-    // Format annotations for canvas drawing
-    const formattedAnnotations = savedAnnotations.map((a) => ({
-      type: a.type,
-      points:
-        a.type === "polygon"
-          ? a.data?.points || []
-          : a.type === "point"
-          ? [{ x: a.data?.pixelX, y: a.data?.pixelY }]
-          : [],
-    }));
+    if (!savedAnnotations.length) {
+      return res.status(400).json({ message: "No valid annotations found" });
+    }
+
+    console.log("✅ Retrieved annotations:", savedAnnotations.map(a => a._id));
+
+    const formattedAnnotations = annotations.map((a) => {
+  const meta = annotationMeta[a._id?.toString()] || {};
+  return {
+    type: a.type,
+    points:
+      a.type === "polygon"
+        ? a.data?.points || []
+        : a.type === "point"
+        ? [{ x: a.data?.pixelX, y: a.data?.pixelY }]
+        : [],
+    label: meta.label || a.label || "",
+    notes: meta.notes || a.notes || "",
+    period: meta.period || a.period || "",
+  };
+});
+
+
+console.log("🧾 formattedAnnotations for canvas:", formattedAnnotations);
 
     const path = require("path");
     const originalPath = path.join(process.cwd(), "uploads", "tiles", tile.imageName.trim());
     const generateAnnotatedImage = require("../utils/generatedAnnotatedImage");
 
-    const annotatedImageUrl = await generateAnnotatedImage(
-      tileId,
-      formattedAnnotations,
-      originalPath
-    );
+    const annotatedImageUrl = await generateAnnotatedImage(tileId, formattedAnnotations, originalPath);
 
-    // Update tile document
     tile.status = "completed";
     tile.submittedAt = new Date();
-    tile.annotations = savedAnnotations.map((a) => a._id);
+    tile.submittedBy = submittedBy || null;
+    tile.annotations = savedAnnotations.map(a => a._id);
     tile.annotatedImageUrl = annotatedImageUrl;
 
     await tile.save();
 
-    // Update annotation image URLs (optional)
+    // 🔗 Optional: Update annotations with the generated image URL
     await Annotation.updateMany(
-      { tile: tile._id },
-      { annotatedimageUrl: annotatedImageUrl }
+      { _id: { $in: annotationIds } },
+      { $set: { annotatedimageUrl: annotatedImageUrl } }
     );
+
+    console.log("✅ Tile and annotations updated");
 
     res.status(200).json({ message: "Tile marked complete", tile });
   } catch (err) {

@@ -7,6 +7,19 @@ const annotationSchema = new mongoose.Schema({
   data: mongoose.Schema.Types.Mixed,
   label: String,
   notes: String,
+  period: {
+    type: String,
+    enum: [
+      "Neolithic or before",
+      "Bronze Age",
+      "Iron Age",
+      "Roman",
+      "Medieval",
+      "Modern",
+      "No idea"
+    ],
+  },
+
   createdAt: { type: Date, default: Date.now },
 });
 
