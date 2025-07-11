@@ -5,53 +5,7 @@ const Map = require("../models/Map");
 const Tile = require("../models/Tile");
 const { sliceMap } = require("../utils/tileSlicer");
 const cloudinary = require("../config/cloudinary"); 
-// const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
-//   const fixedWidth = 1024;
-//   const fixedHeight = 1024;
 
-//   const tileWidth = Math.floor(fixedWidth / cols);
-//   const tileHeight = Math.floor(fixedHeight / rows);
-
-//   const resizedImageBuffer = await sharp(imagePath)
-//     .resize(fixedWidth, fixedHeight)
-//     .toBuffer();
-
-//   if (!fs.existsSync(outputDir)) {
-//     fs.mkdirSync(outputDir, { recursive: true });
-//   }
-
-//   const imageUrls = [];
-//   let tileIndex = 0;
-
-//   for (let row = 0; row < rows; row++) {
-//     for (let col = 0; col < cols; col++) {
-//       const left = col * tileWidth;
-//       const top = row * tileHeight;
-
-//       const width = (col === cols - 1) ? (fixedWidth - left) : tileWidth;
-//       const height = (row === rows - 1) ? (fixedHeight - top) : tileHeight;
-
-//       const tileFileName = `${mapId}_tile_${tileIndex}.png`;
-//       const tilePath = path.join(outputDir, tileFileName);
-
-//       try {
-//         await sharp(resizedImageBuffer)
-//           .extract({ left, top, width, height })
-//           .toFile(tilePath);
-
-//         // console.log(`✅ Tile ${tileIndex} saved → ${tilePath}`);
-//         imageUrls.push(`/uploads/tiles/${tileFileName}`);
-//       } catch (err) {
-//         // console.error(`❌ Tile ${tileIndex} failed:`, err.message);
-//         imageUrls.push(null);
-//       }
-
-//       tileIndex++;
-//     }
-//   }
-
-//   return imageUrls;
-// };
 const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
   const fixedWidth = 1024;
   const fixedHeight = 1024;
@@ -93,7 +47,7 @@ const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
           .extract({ left, top, width, height })
           .toFile(tilePath);
 
-        console.log(`🖼️ Tile ${tileIndex} saved locally → ${tilePath}`);
+        // console.log(`🖼️ Tile ${tileIndex} saved locally → ${tilePath}`);
 
         // Upload tile to Cloudinary
         const tileCloudRes = await cloudinary.uploader.upload(tilePath, {
@@ -102,11 +56,11 @@ const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
           resource_type: "image",
         });
 
-        console.log(`☁️ Tile ${tileIndex} uploaded to Cloudinary → ${tileCloudRes.secure_url}`);
+        // console.log(`☁️ Tile ${tileIndex} uploaded to Cloudinary → ${tileCloudRes.secure_url}`);
 
         imageUrls.push(tileCloudRes.secure_url);
       } catch (err) {
-        console.error(`❌ Tile ${tileIndex} failed to process: ${err.message}`);
+        // console.error(`❌ Tile ${tileIndex} failed to process: ${err.message}`);
         imageUrls.push(null);
       }
 
@@ -168,10 +122,10 @@ exports.uploadMap = async (req, res) => {
       rows,
       cols
     );
-console.log("🧩 Tile Images:", tileImages); 
+// console.log("🧩 Tile Images:", tileImages); 
 
     tileImages.forEach((url, index) => {
-        console.log(`🧷 Tile ${index} filename:`, url?.split("/").pop());
+        // console.log(`🧷 Tile ${index} filename:`, url?.split("/").pop());
 
     });
 
@@ -185,12 +139,12 @@ console.log("🧩 Tile Images:", tileImages);
     }));
 
     allTiles.forEach((tile, index) => {
-      console.log("🧱 Tile image file:", tileImages[index], "🧱 Clean name:", tileImages[index]?.split("/").pop()?.trim());
+      // console.log("🧱 Tile image file:", tileImages[index], "🧱 Clean name:", tileImages[index]?.split("/").pop()?.trim());
 
     });
 
     const insertedTiles = await Tile.insertMany(allTiles);
-console.log("📦 Tiles to insert:", allTiles);
+// console.log("📦 Tiles to insert:", allTiles);
 
     newMap.tiles = insertedTiles.map((tile) => tile._id);
     await newMap.save();

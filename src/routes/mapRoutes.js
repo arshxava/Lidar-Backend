@@ -14,7 +14,14 @@ router.post('/upload', authMiddleware, upload.single('file'), uploadMap);
 router.get('/', authMiddleware, getMaps);
 router.get('/:mapId/tiles', authMiddleware, async (req, res) => {
   try {
-    const map = await Map.findById(req.params.mapId).populate("tiles");
+    const map = await Map.findById(req.params.mapId)
+      .populate({
+        path: "tiles",
+        populate: [
+          { path: "annotations", select: "label notes period" },   
+          { path: "assignedTo", select: "username email" }        
+        ]
+      });
 
     if (!map) {
       return res.status(404).json({ message: "Map not found" });
@@ -26,5 +33,6 @@ router.get('/:mapId/tiles', authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch tiles" });
   }
 });
+
 
 module.exports = router;
