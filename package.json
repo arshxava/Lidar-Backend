@@ -37,6 +37,7 @@
     "nodemon": "^2.0.21",
     "sequelize": "^6.37.7",
     "sharp": "^0.34.2",
+    "streamifier": "^0.1.1",
     "winston": "^3.9.0",
     "winston-daily-rotate-file": "^4.7.1",
     "xmlbuilder2": "^3.1.1"
