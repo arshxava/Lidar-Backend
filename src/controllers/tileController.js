@@ -218,5 +218,30 @@ const completeTile = async (req, res) => {
   }
 };
 
+const markTileAsNoEcho = async (req, res) => {
+  const { tileId } = req.params;
+  const { submittedBy } = req.body;
 
-module.exports = { assignTile, skipTile, completeTile };
+  try {
+    const tile = await Tile.findById(tileId);
+    if (!tile) {
+      return res.status(404).json({ message: "Tile not found" });
+    }
+
+    tile.status = "completed";
+    tile.submittedBy = submittedBy;
+    tile.annotationIds = []; // explicitly empty
+    tile.noEcho = true; // optional: mark as no-echo
+
+    await tile.save();
+
+    res.json({ message: "Tile marked as 'No Echo Found'", tile });
+  } catch (err) {
+    console.error("Error in markTileAsNoEcho:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+
+module.exports = { assignTile, skipTile, completeTile, markTileAsNoEcho };
