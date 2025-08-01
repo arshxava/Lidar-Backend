@@ -54,13 +54,13 @@ exports.register = async (req, res) => {
     email,
     password,
     role,
-    firstName,
-    lastName,
-    sex,
-    age,
-    education,
-    province,
-    country,
+    // firstName,
+    // lastName,
+    // sex,
+    // age,
+    // education,
+    // province,
+    // country,
   } = req.body;
 
   try {
@@ -77,37 +77,37 @@ exports.register = async (req, res) => {
       }
     }
 
-    if (!req.file) {
-      return res.status(400).json({ message: "Profile picture is required." });
-    }
+    // if (!req.file) {
+    //   return res.status(400).json({ message: "Profile picture is required." });
+    // }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const profilePictureUrl = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: "profile_pictures" },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result.secure_url);
-        }
-      );
+    // const profilePictureUrl = await new Promise((resolve, reject) => {
+    //   const uploadStream = cloudinary.uploader.upload_stream(
+    //     { folder: "profile_pictures" },
+    //     (error, result) => {
+    //       if (error) return reject(error);
+    //       resolve(result.secure_url);
+    //     }
+    //   );
 
-      streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
-    });
+    //   streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
+    // });
 
     const user = await User.create({
       username,
       email,
       password: hashedPassword,
       role,
-      firstName,
-      lastName,
-      sex,
-      age,
-      education,
-      province,
-      country,
-      profilePicture: profilePictureUrl,
+      // firstName,
+      // lastName,
+      // sex,
+      // age,
+      // education,
+      // province,
+      // country,
+      // profilePicture: profilePictureUrl,
     });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
@@ -121,14 +121,14 @@ exports.register = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        sex: user.sex,
-        age: user.age,
-        education: user.education,
-        province: user.province,
-        country: user.country,
-        profilePicture: user.profilePicture,
+        // firstName: user.firstName,
+        // lastName: user.lastName,
+        // sex: user.sex,
+        // age: user.age,
+        // education: user.education,
+        // province: user.province,
+        // country: user.country,
+        // profilePicture: user.profilePicture,
       },
     });
   } catch (err) {
