@@ -1,3 +1,5 @@
+// src/models/Map.js
+
 const mongoose = require("mongoose");
 
 const mapSchema = new mongoose.Schema({
