@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
+const Message = require('./src/models/Message'); // ✅ Import message model
 
 dotenv.config();
 
@@ -12,49 +12,61 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000", // Adjust for your frontend
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"]
   }
 });
 
+// ✅ Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
   .then(() => {
-    console.log("MongoDB connected");
-    server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    console.log("✅ MongoDB connected");
+    server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   })
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-const chatRooms = {}; // { roomId: [ { message, tile, sender } ] }
-
+// ✅ Socket.IO
 io.on("connection", (socket) => {
   console.log("🔗 New client connected");
 
-  socket.on("joinRoom", ({ roomId }) => {
+  socket.on("joinRoom", async ({ roomId }) => {
     socket.join(roomId);
     console.log(`👥 User joined room: ${roomId}`);
 
-    if (chatRooms[roomId]) {
-      socket.emit("previousMessages", chatRooms[roomId]);
+    // ✅ Fetch previous messages from DB
+    try {
+      const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
+      socket.emit("previousMessages", messages);
+    } catch (err) {
+      console.error("❌ Failed to fetch previous messages:", err);
     }
   });
 
-  socket.on("sendMessage", ({ roomId, message, tile, sender }) => {
+  socket.on("sendMessage", async ({ roomId, message, tile, sender }) => {
     console.log("📩 Message received:", { roomId, message, sender, tile });
 
-    const chatMessage = { message, tile, sender };
-    if (!chatRooms[roomId]) chatRooms[roomId] = [];
-    chatRooms[roomId].push(chatMessage);
+    try {
+      const chatMessage = new Message({ roomId, message, tile, sender });
+      await chatMessage.save();
 
-    io.to(roomId).emit("receiveMessage", chatMessage);
+      io.to(roomId).emit("receiveMessage", chatMessage);
+    } catch (err) {
+      console.error("❌ Failed to save message:", err);
+    }
   });
 
-  socket.on("clearChat", ({ roomId }) => {
+  socket.on("clearChat", async ({ roomId }) => {
     console.log("🧹 Clearing chat for room:", roomId);
-    chatRooms[roomId] = [];
-    io.to(roomId).emit("clearChat");
+
+    try {
+      await Message.deleteMany({ roomId });
+      io.to(roomId).emit("clearChat");
+    } catch (err) {
+      console.error("❌ Failed to clear chat:", err);
+    }
   });
 
   socket.on("disconnect", () => {
