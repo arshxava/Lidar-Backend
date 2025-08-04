@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.348.0",
+    "@sendgrid/mail": "^8.1.5",
     "aws-sdk": "^2.617.0",
     "axios": "^1.6.3",
     "bcryptjs": "^2.4.3",
@@ -19,6 +20,7 @@
     "cloudinary": "^2.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "express-async-errors": "^3.1.1",
     "express-swagger-generator": "^1.1.17",
