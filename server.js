@@ -1,9 +1,22 @@
-const app = require('./app');
+// ✅ Message Model (src/models/Message.js)
 const mongoose = require('mongoose');
+
+const messageSchema = new mongoose.Schema({
+  roomId: String,
+  message: String,
+  tile: String,
+  sender: String,
+}, { timestamps: true });
+
+module.exports = mongoose.model('Message', messageSchema);
+
+// ✅ Socket Server Entry (e.g. server.js)
+const app = require('./app');
+// const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
-const Message = require('./src/models/Message'); // ✅ Import message model
+const Message = require('./src/models/Message');
 
 dotenv.config();
 
@@ -17,7 +30,6 @@ const io = new Server(server, {
   }
 });
 
-// ✅ Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -28,44 +40,28 @@ mongoose.connect(process.env.MONGO_URI, {
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ✅ Socket.IO
 io.on("connection", (socket) => {
-  console.log("🔗 New client connected");
+  console.log("🔗 Client connected");
 
   socket.on("joinRoom", async ({ roomId }) => {
     socket.join(roomId);
-    console.log(`👥 User joined room: ${roomId}`);
+    console.log(`👥 Joined room: ${roomId}`);
 
-    // ✅ Fetch previous messages from DB
     try {
       const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
       socket.emit("previousMessages", messages);
     } catch (err) {
-      console.error("❌ Failed to fetch previous messages:", err);
+      console.error("❌ Fetch failed:", err);
     }
   });
 
   socket.on("sendMessage", async ({ roomId, message, tile, sender }) => {
-    console.log("📩 Message received:", { roomId, message, sender, tile });
-
     try {
       const chatMessage = new Message({ roomId, message, tile, sender });
       await chatMessage.save();
-
       io.to(roomId).emit("receiveMessage", chatMessage);
     } catch (err) {
-      console.error("❌ Failed to save message:", err);
-    }
-  });
-
-  socket.on("clearChat", async ({ roomId }) => {
-    console.log("🧹 Clearing chat for room:", roomId);
-
-    try {
-      await Message.deleteMany({ roomId });
-      io.to(roomId).emit("clearChat");
-    } catch (err) {
-      console.error("❌ Failed to clear chat:", err);
+      console.error("❌ Message save failed:", err);
     }
   });
 
