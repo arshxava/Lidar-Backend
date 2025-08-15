@@ -8,6 +8,7 @@ const tileRoutes = require('./src/routes/tileRoutes');
 const userRoutes = require('./src/routes/userRoutes');
 const annotationRoutes = require('./src/routes/annotationRoutes');
 const contactusRoutes = require('./src/routes/contactusRoutes');
+const projectRoutes = require('./src/routes/projects')
 const app = express();
 
 app.use(cors());
@@ -23,6 +24,8 @@ app.use('/api/tiles', tileRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/annotations", annotationRoutes);
 app.use("/api/contactus", contactusRoutes);
+app.use("/api/projects", projectRoutes);
+
 
 // app.use('/api/leaderboard', userRoutes);   
 

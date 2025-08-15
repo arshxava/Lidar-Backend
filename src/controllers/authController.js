@@ -77,23 +77,24 @@ exports.register = async (req, res) => {
       }
     }
 
-    if (!req.file) {
-      return res.status(400).json({ message: "Profile picture is required." });
-    }
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const profilePictureUrl = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: "profile_pictures" },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result.secure_url);
-        }
-      );
+    let profilePictureUrl = null;
 
-      streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
-    });
+    // Only upload if a file is provided
+    if (req.file) {
+      profilePictureUrl = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { folder: "profile_pictures" },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result.secure_url);
+          }
+        );
+
+        streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
+      });
+    }
 
     const user = await User.create({
       username,
@@ -107,7 +108,7 @@ exports.register = async (req, res) => {
       education,
       province,
       country,
-      profilePicture: profilePictureUrl,
+      profilePicture: profilePictureUrl, // will be null if not provided
     });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
