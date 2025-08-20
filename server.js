@@ -30,11 +30,11 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // ✅ Socket.IO
 io.on("connection", (socket) => {
-  console.log("🔗 New client connected");
+  // console.log("🔗 New client connected");
 
   socket.on("joinRoom", async ({ roomId }) => {
     socket.join(roomId);
-    console.log(`👥 User joined room: ${roomId}`);
+    // console.log(`👥 User joined room: ${roomId}`);
 
     // ✅ Fetch previous messages from DB
     try {
@@ -59,7 +59,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("clearChat", async ({ roomId }) => {
-    console.log("🧹 Clearing chat for room:", roomId);
+    // console.log("🧹 Clearing chat for room:", roomId);
 
     try {
       await Message.deleteMany({ roomId });
@@ -70,6 +70,6 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("❌ Client disconnected");
+    // console.log("❌ Client disconnected");
   });
 });

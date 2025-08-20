@@ -16,35 +16,35 @@ const fileFilter = (req, file, cb) => {
     cb(null, true);
 };
 
-const storageData = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const { type, fileId } = req.query;
+// const storageData = multer.diskStorage({
+//     destination: (req, file, cb) => {
+//         const { type, fileId } = req.query;
 
-        const uploadPath = FileDirectoryType[type]
-            ? `./uploads${FileDirectoryType[type]}`
-            : null;
+//         const uploadPath = FileDirectoryType[type]
+//             ? `./uploads${FileDirectoryType[type]}`
+//             : null;
 
-        if (!uploadPath) return cb(new Error("Invalid file type"));
+//         if (!uploadPath) return cb(new Error("Invalid file type"));
 
-        try {
-            fs.mkdirSync(uploadPath, { recursive: true });
-        } catch (err) {
-            return cb(new Error("Failed to create directory"));
-        }
+//         try {
+//             fs.mkdirSync(uploadPath, { recursive: true });
+//         } catch (err) {
+//             return cb(new Error("Failed to create directory"));
+//         }
 
-        cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-        const { fileId } = req.query;
-        const baseName = fileId ? `file_${fileId}` : file.fieldname;
-        cb(null, `${baseName}_${Date.now()}${path.extname(file.originalname)}`);
-    },
-});
-
-const upload = multer({
-    storage: storageData,
-    fileFilter,
-});
-
+//         cb(null, uploadPath);
+//     },
+//     filename: (req, file, cb) => {
+//         const { fileId } = req.query;
+//         const baseName = fileId ? `file_${fileId}` : file.fieldname;
+//         cb(null, `${baseName}_${Date.now()}${path.extname(file.originalname)}`);
+//     },
+// });
+multer.memoryStorage();
+// const upload = multer({
+//     storage: storageData,
+//     fileFilter,
+// });
+const upload = multer({ storage });
 module.exports = upload;
 

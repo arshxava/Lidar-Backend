@@ -1,165 +1,368 @@
 // src/controllers/mapController.js
 const fs = require("fs");
 const path = require("path");
-const sharp = require("sharp");
 const Map = require("../models/Map");
 const Tile = require("../models/Tile");
-const { sliceMap } = require("../utils/tileSlicer");
-const cloudinary = require("../config/cloudinary"); 
+const s3 = require("../config/doSpaces");
+const unzipper = require("unzipper");
+const { exec } = require("child_process");
+const { v4: uuidv4 } = require("uuid");
+const stream = require("stream");
+const mime = require("mime-types");
+const tar = require("tar");
+const axios = require("axios");
 
-const generateTileImages = async (imagePath, outputDir, mapId, rows, cols) => {
-  const fixedWidth = 1024;
-  const fixedHeight = 1024;
 
-  const tileWidth = Math.floor(fixedWidth / cols);
-  const tileHeight = Math.floor(fixedHeight / rows);
+// const uploadDirToSpaces = async (dirPath, baseKey) => {
+//   const files = fs.readdirSync(dirPath);
 
-  // Check if the image exists
-  if (!fs.existsSync(imagePath)) {
-    throw new Error(`Input image not found at path: ${imagePath}`);
-  }
+//   for (const fileName of files) {
+//     const fullPath = path.join(dirPath, fileName);
+//     const fileKey = `${baseKey}/${fileName}`;
 
-  // Resize the image
-  const resizedImageBuffer = await sharp(imagePath)
-    .resize(fixedWidth, fixedHeight)
-    .toBuffer();
+//     const stats = fs.statSync(fullPath);
+//     if (stats.isDirectory()) {
+//       await uploadDirToSpaces(fullPath, fileKey); // Recursively upload subdirectories
+//     } else {
+//       const fileStream = fs.createReadStream(fullPath);
+//       const contentType = mime.lookup(fileName) || 'application/octet-stream';
 
-  // Ensure output directory exists
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
+//       await s3.upload({
+//         Bucket: process.env.DO_SPACES_BUCKET,
+//         Key: fileKey,
+//         Body: fileStream,
+//         ACL: 'public-read', // Make it public if frontend should access directly
+//         ContentType: contentType
+//       }).promise();
 
-  const imageUrls = [];
-  let tileIndex = 0;
+//       console.log("✅ Uploaded:", fileKey);
+//     }
+//   }
+// };
+const uploadWithProgress = (filePath, key, mapId) => {
+  return new Promise((resolve, reject) => {
+    const stats = fs.statSync(filePath);
+    const fileSize = stats.size;
+    let uploadedBytes = 0;
 
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const left = col * tileWidth;
-      const top = row * tileHeight;
-      const width = col === cols - 1 ? fixedWidth - left : tileWidth;
-      const height = row === rows - 1 ? fixedHeight - top : tileHeight;
+    const fileStream = fs.createReadStream(filePath);
 
-      const tileFileName = `${mapId}_tile_${tileIndex}.png`;
-      const tilePath = path.join(outputDir, tileFileName);
+    const upload = s3.upload({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: key,
+      Body: fileStream,
+      ACL: "public-read",
+    });
 
-      try {
-        // Extract tile from buffer and save to file
-        await sharp(resizedImageBuffer)
-          .extract({ left, top, width, height })
-          .toFile(tilePath);
+    upload.on("httpUploadProgress", (progress) => {
+      uploadedBytes = progress.loaded;
+      const percentage = Math.round((uploadedBytes / fileSize) * 100);
+      console.log(`Upload progress for ${mapId}: ${percentage}%`);
+    });
 
-        // console.log(`🖼️ Tile ${tileIndex} saved locally → ${tilePath}`);
+    upload.send((err, data) => {
+      if (err) return reject(err);
+      resolve(data);
+    });
+  });
+};
 
-        // Upload tile to Cloudinary
-        const tileCloudRes = await cloudinary.uploader.upload(tilePath, {
-          folder: "tiles",
-          public_id: `${mapId}_tile_${tileIndex}`,
-          resource_type: "image",
-        });
+function safeParseFloat(value, fallback = 0) {
+  const num = parseFloat(value);
+  return isNaN(num) ? fallback : num;
+}
+const uploadDirToSpaces = async (dirPath, baseKey) => {
+  const files = fs.readdirSync(dirPath);
+  for (const fileName of files) {
+    const fullPath = path.join(dirPath, fileName);
+    const fileKey = `${baseKey}/${fileName}`;
+    const stats = fs.statSync(fullPath);
 
-        // console.log(`☁️ Tile ${tileIndex} uploaded to Cloudinary → ${tileCloudRes.secure_url}`);
+    if (stats.isDirectory()) {
+      await uploadDirToSpaces(fullPath, fileKey);
+    } else {
+      const fileStream = fs.createReadStream(fullPath);
+      const contentType = mime.lookup(fileName) || "application/octet-stream";
 
-        imageUrls.push(tileCloudRes.secure_url);
-      } catch (err) {
-        // console.error(`❌ Tile ${tileIndex} failed to process: ${err.message}`);
-        imageUrls.push(null);
-      }
+      await s3
+        .upload({
+          Bucket: process.env.DO_SPACES_BUCKET,
+          Key: fileKey,
+          Body: fileStream,
+          ACL: "public-read",
+          ContentType: contentType,
+        })
+        .promise();
 
-      tileIndex++;
+      console.log("✅ Uploaded:", fileKey);
     }
   }
-
-  return imageUrls;
 };
 exports.uploadMap = async (req, res) => {
   try {
-    const { name, minLat, maxLat, minLng, maxLng, tileSizeKm = 10 } = req.body;
-    const file = req.file;
+    const {
+      name,
+      url,
+      minLat = 0,
+      maxLat = 0,
+      minLng = 0,
+      maxLng = 0,
+    } = req.body;
 
-    if (!file) {
-      // console.warn("❌ No file in request.");
-      return res.status(400).json({ msg: "File missing" });
+    if (!req.file && !url) {
+      return res.status(400).json({ msg: "File or URL missing" });
     }
 
     const bounds = [
-      parseFloat(minLat),
-      parseFloat(maxLat),
-      parseFloat(minLng),
-      parseFloat(maxLng),
+      safeParseFloat(minLat),
+      safeParseFloat(maxLat),
+      safeParseFloat(minLng),
+      safeParseFloat(maxLng),
     ];
 
-    if (bounds.some((val) => isNaN(val))) {
-      // console.warn("❌ Invalid lat/lng values:", bounds);
-      return res.status(400).json({ msg: "Invalid lat/lng" });
+    if (bounds.some((b) => isNaN(b))) {
+      return res.status(400).json({ msg: "Invalid geographic bounds" });
     }
 
-    // const fileUrl = `/uploads/maps/${file.filename}`;
-    const cloudinaryRes = await cloudinary.uploader.upload(file.path, {
-      folder: "maps",
-      public_id: `${Date.now()}-map`,
-      resource_type: "image",
-    });
-    const fileUrl = cloudinaryRes.secure_url;
-
- 
-    const imagePath =  file.path;
-
+    const mapId = uuidv4();
+    console.log("🗺️ Creating new map with ID:", mapId);
 
     const newMap = await Map.create({
+      _id: mapId,
       name,
-      fileUrl,
       bounds,
-      tileSizeKm,
-      uploadedBy: req.user.id 
+      uploadedBy: req.user.id,
+      status: "uploading",
+      progress: 0,
     });
 
-    const { tiles: tileBounds, rows, cols } = sliceMap(bounds, tileSizeKm);
-    
-
-    const tileImages = await generateTileImages(
-      imagePath,
-      "uploads/tiles",
-      newMap._id,
-      rows,
-      cols
-    );
-// console.log("🧩 Tile Images:", tileImages); 
-
-    tileImages.forEach((url, index) => {
-        // console.log(`🧷 Tile ${index} filename:`, url?.split("/").pop());
-
+    res.status(202).json({
+      msg: "Upload started",
+      mapId,
+      statusUrl: `/api/maps/status/${mapId}`,
     });
 
-    const allTiles = tileBounds.map((bounds, i) => ({
-      map: newMap._id,
-      bounds,
-      status: "available",
-      assignedTo: null,
-      imageUrl: tileImages[i] || null,
-      imageName: tileImages[i]?.split("/").pop()?.trim() || null,
-    }));
+    // Async background processing
+    process.nextTick(async () => {
+      try {
+        let fileBuffer;
+        let originalName;
 
-    allTiles.forEach((tile, index) => {
-      // console.log("🧱 Tile image file:", tileImages[index], "🧱 Clean name:", tileImages[index]?.split("/").pop()?.trim());
+        if (req.file) {
+          fileBuffer = req.file.buffer;
+          originalName = req.file.originalname;
+        } else if (url) {
+          console.log("🌐 Downloading map from:", url);
 
-    });
+          const response = await axios.get(url, { responseType: "stream" });
+          const totalLength = parseInt(response.headers["content-length"], 10);
+          let downloaded = 0;
+          const chunks = [];
 
-    const insertedTiles = await Tile.insertMany(allTiles);
-// console.log("📦 Tiles to insert:", allTiles);
+          response.data.on("data", (chunk) => {
+            chunks.push(chunk);
+            downloaded += chunk.length;
+            if (totalLength) {
+              const percent = ((downloaded / totalLength) * 100).toFixed(2);
+              process.stdout.write(`\r⬇️ Download progress: ${percent}%`);
+            } else {
+              process.stdout.write(`\r⬇️ Downloaded: ${downloaded} bytes`);
+            }
+          });
 
-    newMap.tiles = insertedTiles.map((tile) => tile._id);
-    await newMap.save();
+          await new Promise((resolve, reject) => {
+            response.data.on("end", resolve);
+            response.data.on("error", reject);
+          });
 
-    res.status(201).json({
-      msg: "Map uploaded and sliced successfully",
-      name: newMap.name,
-      tilesCreated: insertedTiles.length,
+          fileBuffer = Buffer.concat(chunks);
+          originalName = path.basename(url);
+          console.log("\n✅ Downloaded:", originalName);
+        }
+
+        const fileExt = path.extname(originalName).toLowerCase();
+        const tempDir = `uploads/lidar/temp-${mapId}`;
+        fs.mkdirSync(tempDir, { recursive: true });
+
+        let lazInput;
+
+        if (fileExt === ".zip") {
+          console.log("📦 Unzipping...");
+          const unzipStream = unzipper.Extract({ path: tempDir });
+          stream.Readable.from(fileBuffer).pipe(unzipStream);
+
+          await new Promise((resolve, reject) => {
+            unzipStream.on("close", resolve);
+            unzipStream.on("error", reject);
+          });
+
+          const lazFiles = fs.readdirSync(tempDir).filter((f) => f.endsWith(".laz"));
+          if (!lazFiles.length) throw new Error("No .laz files found in archive");
+          lazInput = path.join(tempDir, lazFiles[0]);
+        } else if (fileExt === ".tar") {
+          console.log("📦 Extracting TAR...");
+          await tar.x({ C: tempDir }, [], stream.Readable.from(fileBuffer));
+
+          const lazFiles = fs.readdirSync(tempDir).filter((f) => f.endsWith(".laz"));
+          if (!lazFiles.length) throw new Error("No .laz files found in archive");
+          lazInput = path.join(tempDir, lazFiles[0]);
+        } else if (fileExt === ".laz") {
+          lazInput = path.join(tempDir, originalName);
+          fs.writeFileSync(lazInput, fileBuffer);
+        } else {
+          throw new Error("Unsupported file format. Only .zip, .tar or .laz allowed.");
+        }
+
+        // Step 1: Tiling
+        await Map.findByIdAndUpdate(mapId, { progress: 50, status: "tiling" });
+
+        const tileOutDir = `uploads/lidar/tiles-${mapId}`;
+        fs.mkdirSync(tileOutDir, { recursive: true });
+
+        const tileSize = calculateOptimalTileSize(bounds, 100);
+        const pdalCmd = `pdal tile --length=${tileSize} "${lazInput}" "${tileOutDir}/tile_#.laz"`;
+        console.log("🧱 Running PDAL:", pdalCmd);
+
+        await new Promise((resolve, reject) => {
+          exec(pdalCmd, (err, stdout, stderr) => {
+            if (err) return reject(new Error(`PDAL failed: ${stderr}`));
+            resolve(stdout);
+          });
+        });
+
+        await Map.findByIdAndUpdate(mapId, { progress: 75, status: "uploading_tiles" });
+
+        // Step 2: Potree conversion
+        const potreeOutputDir = `uploads/lidar/potree-${mapId}`;
+        fs.mkdirSync(potreeOutputDir, { recursive: true });
+
+        const potreeCmd = `"C:/Users/Admin/OneDrive/PotreeConverter_windows_x64/PotreeConverter.exe" "${lazInput}" -o "${potreeOutputDir}" --generate-page map-${mapId}`;
+        console.log("🖼️ Running PotreeConverter:", potreeCmd);
+
+        await new Promise((resolve, reject) => {
+          exec(potreeCmd, (err, stdout, stderr) => {
+            if (err) return reject(new Error(`Potree failed: ${stderr}`));
+            resolve(stdout);
+          });
+        });
+
+        await uploadDirToSpaces(potreeOutputDir, `lidar/potree/${mapId}`);
+        fs.rmSync(potreeOutputDir, { recursive: true, force: true });
+
+        // Step 3: Upload tiles
+        const tileFiles = fs.readdirSync(tileOutDir);
+        const tileUploadPromises = tileFiles.map(async (fileName, index) => {
+          const tileKey = `lidar/tiles/${mapId}/${fileName}`;
+          const tilePath = path.join(tileOutDir, fileName);
+
+          await uploadWithProgress(tilePath, tileKey, mapId);
+
+          return {
+            map: mapId,
+            bounds: calculateTileBounds(bounds, index, tileFiles.length),
+            status: "available",
+            imageUrl: `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${tileKey}`,
+            imageName: fileName,
+          };
+        });
+
+        const tiles = await Promise.all(tileUploadPromises);
+        const insertedTiles = await Tile.insertMany(tiles);
+
+        const viewerUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/lidar/potree/${mapId}/map-${mapId}.html`;
+
+        await Map.findByIdAndUpdate(mapId, {
+          tiles: insertedTiles.map((t) => t._id),
+          progress: 100,
+          status: "completed",
+          tileCount: insertedTiles.length,
+          viewerUrl,
+        });
+
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        fs.rmSync(tileOutDir, { recursive: true, force: true });
+
+        console.log("🎉 Map processing completed:", mapId);
+      } catch (err) {
+        console.error("❌ Error in processing:", err);
+        await Map.findByIdAndUpdate(mapId, {
+          status: "failed",
+          error: err.message,
+        });
+      }
     });
   } catch (err) {
+    console.error("❌ uploadMap failed:", err);
     res.status(500).json({ msg: "Upload failed", error: err.message });
   }
 };
 
+
+// Get maps by user
+exports.getMaps = async (req, res) => {
+  try {
+    const maps = await Map.find({ uploadedBy: req.user.id }).populate("tiles");
+    res.json(maps);
+  } catch (err) {
+    console.error("❌ getMaps failed:", err);
+    res.status(500).json({ msg: "Fetching maps failed" });
+  }
+};
+
+// Poll map status
+exports.getMapStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const map = await Map.findById(id).populate("tiles");
+
+    if (!map) {
+      return res.status(404).json({ msg: "Map not found" });
+    }
+
+    res.json({
+      status: map.status,
+      progress: map.progress,
+      error: map.error || null,
+      viewerUrl: map.viewerUrl || null,
+    });
+  } catch (err) {
+    console.error("❌ getMapStatus failed:", err);
+    res.status(500).json({ msg: "Failed to fetch status" });
+  }
+};
+
+
+// Helper functions
+function calculateOptimalTileSize(bounds, targetTileCount) {
+  const [minLat, maxLat, minLng, maxLng] = bounds;
+
+  if (minLat === maxLat || minLng === maxLng) {
+    return 1000; // Default 1km tiles
+  }
+
+  const area = (maxLat - minLat) * (maxLng - minLng);
+  const tileSize = Math.sqrt(area / targetTileCount) * 1000;
+
+  return tileSize > 0 ? tileSize : 1000;
+}
+
+// Tile bounds calculation
+function calculateTileBounds(mapBounds, tileIndex, totalTiles) {
+  const [minLat, maxLat, minLng, maxLng] = mapBounds;
+  const cols = Math.ceil(Math.sqrt(totalTiles));
+  const row = Math.floor(tileIndex / cols);
+  const col = tileIndex % cols;
+
+  const latStep = (maxLat - minLat) / cols;
+  const lngStep = (maxLng - minLng) / cols;
+
+  return [
+    minLat + row * latStep,
+    minLat + (row + 1) * latStep,
+    minLng + col * lngStep,
+    minLng + (col + 1) * lngStep,
+  ];
+}
 exports.getMaps = async (req, res) => {
   try {
     const maps = await Map.find({ uploadedBy: req.user.id }).populate("tiles");

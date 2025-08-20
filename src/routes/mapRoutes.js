@@ -1,17 +1,15 @@
 // src/routes/mapRoutes.js
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
+// const multer = require('multer');
 const authMiddleware = require('../middleware/authMiddleware');
 const Map = require("../models/Map");
 const { uploadMap, getMaps } = require('../controllers/mapController');
 const Tile = require('../models/Tile');
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/maps'),
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
-});
-const upload = multer({ storage });
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
+
 router.post('/upload', authMiddleware, upload.single('file'), uploadMap);
 router.get('/', authMiddleware, getMaps);
 
@@ -29,9 +27,9 @@ router.get('/:mapId/tiles', authMiddleware, async (req, res) => {
 
     // Debug: Check populated data
     tiles.forEach((tile, i) => {
-      console.log(`🧩 Tile #${i}`);
-      console.log("→ assignedTo:", tile.assignedTo);
-      console.log("→ annotations:", tile.annotations);
+      // console.log(`🧩 Tile #${i}`);
+      // console.log("→ assignedTo:", tile.assignedTo);
+      // console.log("→ annotations:", tile.annotations);
     });
 
     res.json(tiles);
@@ -41,7 +39,31 @@ router.get('/:mapId/tiles', authMiddleware, async (req, res) => {
   }
 });
 
-
+// Add to your routes
+router.get('/test-spaces', async (req, res) => {
+  try {
+    const data = await s3.listObjectsV2({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      MaxKeys: 1
+    }).promise();
+    
+    res.json({
+      success: true,
+      message: `Connected to bucket ${process.env.DO_SPACES_BUCKET}`,
+      firstObject: data.Contents[0]?.Key || 'No objects found'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      config: {
+        bucket: process.env.DO_SPACES_BUCKET,
+        endpoint: process.env.DO_SPACES_ENDPOINT,
+        region: process.env.DO_SPACES_ENDPOINT?.split('.')[0]
+      }
+    });
+  }
+});
 module.exports = router;
 
 

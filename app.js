@@ -23,6 +23,7 @@ app.use('/api/tiles', tileRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/annotations", annotationRoutes);
 app.use("/api/contactus", contactusRoutes);
+app.use("/potree", express.static(path.join(__dirname, "../uploads/lidar")));
 
 // app.use('/api/leaderboard', userRoutes);   
 

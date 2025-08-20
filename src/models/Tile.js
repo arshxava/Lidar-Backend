@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const tileSchema = new mongoose.Schema(
   {
-    map: { type: mongoose.Schema.Types.ObjectId, ref: "Map" },
+    map: { type: String, ref: "Map", required: true },
     imageUrl: { type: String },
     imageName: { type: String },
     bounds: { type: [Number] },
