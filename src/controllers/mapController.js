@@ -169,3 +169,63 @@ exports.getMaps = async (req, res) => {
     res.status(500).json({ msg: "Fetching maps failed" });
   }
 };
+exports.deleteMap = async (req, res) => {
+  try {
+    const { mapId } = req.params;
+    console.log("🗑️ Delete request received for mapId:", mapId);
+
+    // Find map
+    const map = await Map.findById(mapId).populate("tiles");
+    if (!map) {
+      console.warn("❌ Map not found:", mapId);
+      return res.status(404).json({ msg: "Map not found" });
+    }
+    console.log("✅ Map found:", map.name || map._id);
+
+    // Ensure user is the uploader (authorization check)
+    if (map.uploadedBy.toString() !== req.user.id) {
+      console.warn(
+        `⚠️ Unauthorized delete attempt by user ${req.user.id} for map ${mapId}`
+      );
+      return res
+        .status(403)
+        .json({ msg: "Not authorized to delete this map" });
+    }
+    console.log("🔐 User authorized:", req.user.id);
+
+    // Delete all tiles in DB
+    const deletedTiles = await Tile.deleteMany({ map: mapId });
+    console.log(`🧱 Deleted ${deletedTiles.deletedCount} tiles from DB`);
+
+    // Delete map record
+    await Map.findByIdAndDelete(mapId);
+    console.log("🗺️ Map deleted from DB:", mapId);
+
+    // OPTIONAL: also remove files from Cloudinary
+    try {
+      // Delete map image
+      if (map.fileUrl) {
+        const publicId = map.fileUrl.split("/").pop().split(".")[0];
+        console.log("☁️ Deleting map image from Cloudinary:", publicId);
+        await cloudinary.uploader.destroy(`maps/${publicId}`);
+      }
+
+      // Delete tiles images
+      for (const tile of map.tiles) {
+        if (tile.imageName) {
+          const tileId = tile.imageName.split(".")[0];
+          console.log("☁️ Deleting tile image from Cloudinary:", tileId);
+          await cloudinary.uploader.destroy(`tiles/${tileId}`);
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ Cloudinary cleanup failed:", err.message);
+    }
+
+    console.log("✅ Map and tiles fully deleted:", mapId);
+    res.json({ msg: "Map and its tiles deleted successfully" });
+  } catch (err) {
+    console.error("❌ Delete map failed:", err);
+    res.status(500).json({ msg: "Failed to delete map", error: err.message });
+  }
+};

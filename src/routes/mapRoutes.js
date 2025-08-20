@@ -4,7 +4,7 @@ const router = express.Router();
 const multer = require('multer');
 const authMiddleware = require('../middleware/authMiddleware');
 const Map = require("../models/Map");
-const { uploadMap, getMaps } = require('../controllers/mapController');
+const { uploadMap, getMaps, deleteMap } = require('../controllers/mapController');
 const Tile = require('../models/Tile');
 
 const storage = multer.diskStorage({
@@ -14,7 +14,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 router.post('/upload', authMiddleware, upload.single('file'), uploadMap);
 router.get('/', authMiddleware, getMaps);
-
+// Delete a map (and its tiles)
+router.delete('/:mapId', authMiddleware, deleteMap);
 
 router.get('/:mapId/tiles', authMiddleware, async (req, res) => {
   try {

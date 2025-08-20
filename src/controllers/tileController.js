@@ -268,89 +268,6 @@
 
 
 // src/controllers/tileController.js
- 
-const Tile = require("../models/Tile");
-const Annotation = require("../models/Annotation");
-const fs = require("fs");
- 
-const assignTile = async (req, res) => {
- 
-  const userId = req.user?._id || req.user?.id;
- 
-  if (!userId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
- 
-  try {
- 
-    const existingTile = await Tile.findOne({ assignedTo: userId, status: 'in_progress' });
-    if (existingTile) {
-      return res.status(200).json(existingTile);
-    }
- 
-    const newTile = await Tile.findOneAndUpdate(
-      {
-        status: 'available',
-        assignedTo: null,
-        skippedBy: { $ne: userId }, // exclude previously skipped tiles
-      },
-      {
-        assignedTo: userId,
-        assignedAt: new Date(),
-        status: 'in_progress',
-      },
-      { new: true }
-    );
- 
- 
-    if (!newTile) {
-      return res.status(404).json({ message: "No available tiles" });
-    }
- 
-    res.status(200).json(newTile);
-  } catch (err) {
-    // console.error("🔥 Error in assignTile:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
- 
-const skipTile = async (req, res) => {
-  const { tileId } = req.params;
-  const userId = req.user?.id || req.user?._id;
- 
-  // console.log("📩 Skip request received for tile:", tileId);
-  // console.log("👤 User:", userId);
- 
-  try {
-    const tile = await Tile.findById(tileId);
- 
-    if (!tile) {
-      return res.status(404).json({ message: "Tile not found" });
-    }
- 
-    // Mark the tile as available again
-    tile.status = "available";
-    tile.assignedTo = null;
-    tile.assignedAt = null;
- 
-    // Safely reset annotations field
-    tile.annotations = undefined; // 👈 fix: don't assign empty array to ObjectId field
- 
-    // Add user to skippedBy
-    if (!tile.skippedBy.includes(userId)) {
-      tile.skippedBy.push(userId);
-    }
- 
-    await tile.save();
- 
-    // console.log("✅ Tile marked as skipped and made available");
-    res.status(200).json({ message: "Tile skipped" });
-  } catch (err) {
-    // console.error("🔥 Skip tile error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
- 
 // const completeTile = async (req, res) => {
 //   // console.log("🚀 completeTile API called");
  
@@ -426,7 +343,103 @@ const skipTile = async (req, res) => {
 //     res.status(500).json({ message: "Server error", error: err.message });
 //   }
 // };
+  
+const Tile = require("../models/Tile");
+const Annotation = require("../models/Annotation");
+const fs = require("fs");
  
+const assignTile = async (req, res) => {
+  const userId = req.user?._id || req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    // Check if user already has an in-progress tile
+    let existingTile = await Tile.findOne({ assignedTo: userId, status: "in_progress" });
+
+    // If found, verify that it still exists in DB and is linked to a valid map
+    if (existingTile) {
+      const stillExists = await Tile.findById(existingTile._id);
+
+      if (stillExists) {
+        // ✅ Tile is still valid → return it
+        return res.status(200).json(stillExists);
+      } else {
+        // ⚠️ Tile was deleted → clean up reference
+        await Tile.updateOne(
+          { assignedTo: userId, status: "in_progress" },
+          { $set: { assignedTo: null, status: "available" } }
+        );
+      }
+    }
+
+    // Otherwise, assign a new available tile
+    const newTile = await Tile.findOneAndUpdate(
+      {
+        status: "available",
+        assignedTo: null,
+        skippedBy: { $ne: userId }, // exclude skipped tiles
+      },
+      {
+        assignedTo: userId,
+        assignedAt: new Date(),
+        status: "in_progress",
+      },
+      { new: true }
+    );
+
+    if (!newTile) {
+      return res.status(404).json({ message: "No available tiles" });
+    }
+
+    res.status(200).json(newTile);
+  } catch (err) {
+    console.error("🔥 Error in assignTile:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+ 
+const skipTile = async (req, res) => {
+  const { tileId } = req.params;
+  const userId = req.user?.id || req.user?._id;
+ 
+  // console.log("📩 Skip request received for tile:", tileId);
+  // console.log("👤 User:", userId);
+ 
+  try {
+    const tile = await Tile.findById(tileId);
+ 
+    if (!tile) {
+      return res.status(404).json({ message: "Tile not found" });
+    }
+ 
+    // Mark the tile as available again
+    tile.status = "available";
+    tile.assignedTo = null;
+    tile.assignedAt = null;
+ 
+    // Safely reset annotations field
+    tile.annotations = undefined; // 👈 fix: don't assign empty array to ObjectId field
+ 
+    // Add user to skippedBy
+    if (!tile.skippedBy.includes(userId)) {
+      tile.skippedBy.push(userId);
+    }
+ 
+    await tile.save();
+ 
+    // console.log("✅ Tile marked as skipped and made available");
+    res.status(200).json({ message: "Tile skipped" });
+  } catch (err) {
+    // console.error("🔥 Skip tile error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+ 
+
 const completeTile = async (req, res) => {
   const { tileId } = req.params;
   const { annotationIds, submittedBy } = req.body;
