@@ -9,44 +9,36 @@ const streamifier = require("streamifier");
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
- 
+
   try {
- 
-    const user = await User.findOne({ email });
- 
+    // 🔹 Find user by either email OR username
+    const user = await User.findOne({
+      $or: [{ email }, { username: email }]
+    });
+
     if (!user) return res.status(400).json({ msg: "Invalid credentials" });
- 
- 
- 
+
+    // 🔹 Check password
     const isMatch = await bcrypt.compare(password, user.password);
- 
     if (!isMatch) return res.status(400).json({ msg: "Invalid credentials" });
- 
- 
- 
+
+    // 🔹 Generate JWT
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
- 
+
     res.json({
- 
       token,
- 
       user: {
- 
         id: user._id,
         email: user.email,
         role: user.role,
         username: user.username,
       }
- 
     });
- 
   } catch (err) {
- 
     res.status(500).json({ msg: "Login failed" });
- 
   }
- 
 };
+
 
 exports.register = async (req, res) => {
   const {
