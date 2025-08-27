@@ -1,21 +1,40 @@
-exports.sliceMap = (bounds, tileSizeKm) => {
-  const [minLat, maxLat, minLng, maxLng] = bounds;
+const sharp = require("sharp");
+const path = require("path");
+const fs = require("fs");
+const s3 = require("./spacesClient");
 
-  const step = tileSizeKm * 0.009; // approx 1km ≈ 0.009 degrees
-  const rows = Math.ceil((maxLat - minLat) / step);
-  const cols = Math.ceil((maxLng - minLng) / step);
+const BUCKET = process.env.DO_SPACES_BUCKET;
+const PUBLIC_BASE = process.env.DO_SPACES_PUBLIC_BASE;
 
-  const tiles = [];
+async function tileAndUploadToSpaces(rasterBuffer, { mapId, rows, cols }) {
+  const image = sharp(rasterBuffer);
+  const metadata = await image.metadata();
+
+  const tileWidth = Math.floor(metadata.width / cols);
+  const tileHeight = Math.floor(metadata.height / rows);
+  const tileUrls = [];
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      const lat1 = minLat + row * step;
-      const lat2 = Math.min(lat1 + step, maxLat);
-      const lng1 = minLng + col * step;
-      const lng2 = Math.min(lng1 + step, maxLng);
-      tiles.push([lat1, lat2, lng1, lng2]);
+      const tileName = `tile_${row}_${col}.png`;
+      const tileBuffer = await image
+        .extract({ left: col * tileWidth, top: row * tileHeight, width: tileWidth, height: tileHeight })
+        .png()
+        .toBuffer();
+
+      const key = `tiles/${mapId}/${tileName}`;
+      await s3.putObject({
+        Bucket: BUCKET,
+        Key: key,
+        Body: tileBuffer,
+        ACL: "public-read",
+        ContentType: "image/png"
+      }).promise();
+
+      tileUrls.push(`${PUBLIC_BASE}/${key}`);
     }
   }
+  return tileUrls;
+}
 
-  return { tiles, rows, cols };
-};
+module.exports = { tileAndUploadToSpaces };

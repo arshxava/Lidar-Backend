@@ -1,5 +1,6 @@
 // ✅ Message Model (src/models/Message.js)
 const mongoose = require('mongoose');
+const { processAllRawMaps } = require('./src/utils/processSpaceMap'); // ✅ Import your processing function
 
 const messageSchema = new mongoose.Schema({
   roomId: String,
@@ -15,7 +16,7 @@ const app = require('./app');
 // const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const http = require('http');
-const { Server } = require('socket.io');
+// const { Server } = require('socket.io');
 const Message = require('./src/models/Message');
 
 dotenv.config();
@@ -23,49 +24,25 @@ dotenv.config();
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
-});
+// const io = new Server(server, {
+//   cors: {
+//     origin: "http://localhost:3000",
+//     methods: ["GET", "POST"]
+//   }
+// });
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-  .then(() => {
+  .then(async () => {  // ✅ make this async
     console.log("✅ MongoDB connected");
+
+    console.log("🚀 Server started: processing existing raw maps...");
+    await processAllRawMaps();  // ✅ now await works here
+    console.log("✅ Initial processing completed.");
+
     server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-io.on("connection", (socket) => {
-  console.log("🔗 Client connected");
-
-  socket.on("joinRoom", async ({ roomId }) => {
-    socket.join(roomId);
-    console.log(`👥 Joined room: ${roomId}`);
-
-    try {
-      const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
-      socket.emit("previousMessages", messages);
-    } catch (err) {
-      console.error("❌ Fetch failed:", err);
-    }
-  });
-
-  socket.on("sendMessage", async ({ roomId, message, tile, sender }) => {
-    try {
-      const chatMessage = new Message({ roomId, message, tile, sender });
-      await chatMessage.save();
-      io.to(roomId).emit("receiveMessage", chatMessage);
-    } catch (err) {
-      console.error("❌ Message save failed:", err);
-    }
-  });
-
-  socket.on("disconnect", () => {
-    console.log("❌ Client disconnected");
-  });
-});

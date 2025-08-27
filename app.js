@@ -9,6 +9,7 @@ const userRoutes = require('./src/routes/userRoutes');
 const annotationRoutes = require('./src/routes/annotationRoutes');
 const contactusRoutes = require('./src/routes/contactusRoutes');
 const projectRoutes = require('./src/routes/projects')
+const cronJob = require('./src/utils/cronJob'); 
 const app = express();
 
 app.use(cors());
