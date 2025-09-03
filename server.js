@@ -39,7 +39,7 @@ mongoose.connect(process.env.MONGO_URI, {
     console.log("✅ MongoDB connected");
 
     console.log("🚀 Server started: processing existing raw maps...");
-    await processAllRawMaps();  // ✅ now await works here
+    // await processAllRawMaps();  // ✅ now await works here
     console.log("✅ Initial processing completed.");
 
     server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

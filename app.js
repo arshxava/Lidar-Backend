@@ -9,6 +9,7 @@ const userRoutes = require('./src/routes/userRoutes');
 const annotationRoutes = require('./src/routes/annotationRoutes');
 const contactusRoutes = require('./src/routes/contactusRoutes');
 const projectRoutes = require('./src/routes/projects')
+const ingestRoutes=require('./src/routes/ingestRoutes')
 const cronJob = require('./src/utils/cronJob'); 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/users', userRoutes);
 app.use("/api/annotations", annotationRoutes);
 app.use("/api/contactus", contactusRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api", ingestRoutes);
 
 
 // app.use('/api/leaderboard', userRoutes);   

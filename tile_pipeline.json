@@ -1,0 +1,14 @@
+{
+  "pipeline": [
+    "input.laz",
+    {
+      "type": "filters.splitter",
+      "length": 1000
+    },
+    {
+      "type": "writers.las",
+      "filename": "tiles/tile_#.laz"
+    }
+  ]
+}
+
