@@ -1,0 +1,10 @@
+{
+  "pipeline": [
+    "uploads\\lidar\\temp-f338caf0-1186-4dab-8106-b4b7d7eeacc6\\1754290866986-CL2_AZ31_2024_1000_3726.laz",
+    {
+      "type": "filters.crop",
+      "bounds": "([30,31],[10,11])"
+    },
+    "uploads\\lidar\\tiles-f338caf0-1186-4dab-8106-b4b7d7eeacc6\\tile_0_0.laz"
+  ]
+}

@@ -11,8 +11,7 @@ const stream = require("stream");
 const mime = require("mime-types");
 const tar = require("tar");
 const axios = require("axios");
-
-
+const Unrar = require("node-unrar-js");
 // const uploadDirToSpaces = async (dirPath, baseKey) => {
 //   const files = fs.readdirSync(dirPath);
 
@@ -39,6 +38,26 @@ const axios = require("axios");
 //     }
 //   }
 // };
+async function runPdalPipeline(pipelineJson, mapId, tileFile) {
+  const tempPipelinePath = path.join(__dirname, `pipeline-${mapId}-${Date.now()}.json`);
+
+  // Save JSON pipeline to a file
+  fs.writeFileSync(tempPipelinePath, JSON.stringify(pipelineJson, null, 2));
+
+  return new Promise((resolve, reject) => {
+    exec(`pdal pipeline "${tempPipelinePath}"`, (err, stdout, stderr) => {
+      // Clean up file
+      fs.unlinkSync(tempPipelinePath);
+
+      if (err) {
+        console.error("❌ PDAL error:", stderr);
+        return reject(err);
+      }
+      console.log(`✅ Created tile: ${tileFile}`);
+      resolve(stdout);
+    });
+  });
+}
 const uploadWithProgress = (filePath, key, mapId) => {
   return new Promise((resolve, reject) => {
     const stats = fs.statSync(filePath);
@@ -206,6 +225,25 @@ exports.uploadMap = async (req, res) => {
           const lazFiles = fs.readdirSync(tempDir).filter((f) => f.endsWith(".laz"));
           if (!lazFiles.length) throw new Error("No .laz files found in archive");
           lazInput = path.join(tempDir, lazFiles[0]);
+
+          } else if (fileExt === ".rar") {
+  console.log("📦 Extracting RAR...");
+
+  const extractor = await Unrar.createExtractorFromData({ data: fileBuffer });
+  const extracted = extractor.extract();
+
+  for (const file of extracted.files) {
+    if (!file.fileHeader.flags.directory) {
+      const filePath = path.join(tempDir, file.fileHeader.name);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, file.extraction);
+    }
+  }
+
+  const lazFiles = fs.readdirSync(tempDir).filter((f) => f.endsWith(".laz"));
+  if (!lazFiles.length) throw new Error("No .laz files found in RAR archive");
+  lazInput = path.join(tempDir, lazFiles[0]);
+
         } else if (fileExt === ".laz") {
           lazInput = path.join(tempDir, originalName);
           fs.writeFileSync(lazInput, fileBuffer);
@@ -219,16 +257,37 @@ exports.uploadMap = async (req, res) => {
         const tileOutDir = `uploads/lidar/tiles-${mapId}`;
         fs.mkdirSync(tileOutDir, { recursive: true });
 
-        const tileSize = calculateOptimalTileSize(bounds, 100);
-        const pdalCmd = `pdal tile --length=${tileSize} "${lazInput}" "${tileOutDir}/tile_#.laz"`;
-        console.log("🧱 Running PDAL:", pdalCmd);
+      console.log("🧱 Generating exactly 100 tiles...");
 
-        await new Promise((resolve, reject) => {
-          exec(pdalCmd, (err, stdout, stderr) => {
-            if (err) return reject(new Error(`PDAL failed: ${stderr}`));
-            resolve(stdout);
-          });
-        });
+const [minLat, maxLat, minLng, maxLng] = bounds;
+const rows = 10;
+const cols = 10;
+
+const latStep = (maxLat - minLat) / rows;
+const lngStep = (maxLng - minLng) / cols;
+
+for (let r = 0; r < rows; r++) {
+  for (let c = 0; c < cols; c++) {
+    const tMinLat = minLat + r * latStep;
+    const tMaxLat = minLat + (r + 1) * latStep;
+    const tMinLng = minLng + c * lngStep;
+    const tMaxLng = minLng + (c + 1) * lngStep;
+
+    const tileFile = path.join(tileOutDir, `tile_${r}_${c}.laz`);
+
+    const pipelineJson = {
+  pipeline: [
+    lazInput,
+    { type: "filters.crop", bounds: `([${tMinLng},${tMaxLng}],[${tMinLat},${tMaxLat}])` },
+    tileFile,
+  ]
+};
+
+await runPdalPipeline(pipelineJson, mapId, tileFile);
+
+  }
+}
+
 
         await Map.findByIdAndUpdate(mapId, { progress: 75, status: "uploading_tiles" });
 
@@ -239,32 +298,89 @@ exports.uploadMap = async (req, res) => {
         const potreeCmd = `"C:/Users/Admin/OneDrive/PotreeConverter_windows_x64/PotreeConverter.exe" "${lazInput}" -o "${potreeOutputDir}" --generate-page map-${mapId}`;
         console.log("🖼️ Running PotreeConverter:", potreeCmd);
 
-        await new Promise((resolve, reject) => {
-          exec(potreeCmd, (err, stdout, stderr) => {
-            if (err) return reject(new Error(`Potree failed: ${stderr}`));
-            resolve(stdout);
-          });
-        });
+        const checkLazHasPoints = (filePath) => {
+  return new Promise((resolve, reject) => {
+    exec(`pdal info --summary "${filePath}"`, (err, stdout, stderr) => {
+      if (err) {
+        console.error(`❌ Failed pdal info for ${filePath}:`, stderr);
+        return resolve(false); // treat errors as "no points"
+      }
+      try {
+        const summary = JSON.parse(stdout);
+        const numPoints = summary?.summary?.num_points || 0;
+        return resolve(numPoints > 0);
+      } catch (e) {
+        console.error(`❌ Failed to parse pdal info for ${filePath}`);
+        return resolve(false);
+      }
+    });
+  });
+};
+
 
         await uploadDirToSpaces(potreeOutputDir, `lidar/potree/${mapId}`);
         fs.rmSync(potreeOutputDir, { recursive: true, force: true });
+// Step 2b: Potree conversion for each tile
+console.log("🖼️ Running PotreeConverter for each tile...");
+
+const potreeTileFiles = fs.readdirSync(tileOutDir).filter(f => f.endsWith(".laz"));
+for (const tileFile of potreeTileFiles) {
+  const tilePath = path.join(tileOutDir, tileFile);
+  const hasPoints = await checkLazHasPoints(tilePath);
+
+  if (!hasPoints) {
+    console.warn(`⚠️ Skipping ${tileFile} (no points)`);
+    continue;
+  }
+
+  const tileId = path.basename(tileFile, ".laz");
+  const potreeTileOut = path.join(`uploads/lidar/potree-${mapId}`, tileId);
+  fs.mkdirSync(potreeTileOut, { recursive: true });
+
+  const potreeTileCmd = `"C:/Users/Admin/OneDrive/PotreeConverter_windows_x64/PotreeConverter.exe" "${tilePath}" -o "${potreeTileOut}" --generate-page ${tileId}`;
+  console.log(`🖼️ Converting ${tileFile} → Potree...`);
+
+  await new Promise((resolve, reject) => {
+    exec(potreeTileCmd, (err, stdout, stderr) => {
+      if (err) return reject(new Error(`Potree failed for ${tileFile}: ${stderr}`));
+      resolve(stdout);
+    });
+  });
+
+  await uploadDirToSpaces(potreeTileOut, `lidar/potree/${mapId}/${tileId}`);
+  fs.rmSync(potreeTileOut, { recursive: true, force: true });
+}
+
 
         // Step 3: Upload tiles
-        const tileFiles = fs.readdirSync(tileOutDir);
-        const tileUploadPromises = tileFiles.map(async (fileName, index) => {
-          const tileKey = `lidar/tiles/${mapId}/${fileName}`;
-          const tilePath = path.join(tileOutDir, fileName);
+       const tileFiles = fs.readdirSync(tileOutDir);
+const tileUploadPromises = tileFiles.map(async (fileName) => {
+  const tilePath = path.join(tileOutDir, fileName);
+  const tileKey = `lidar/tiles/${mapId}/${fileName}`;
 
-          await uploadWithProgress(tilePath, tileKey, mapId);
+  await uploadWithProgress(tilePath, tileKey, mapId);
 
-          return {
-            map: mapId,
-            bounds: calculateTileBounds(bounds, index, tileFiles.length),
-            status: "available",
-            imageUrl: `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${tileKey}`,
-            imageName: fileName,
-          };
-        });
+  // Extract row/col from fileName: tile_3_7.laz
+  const match = fileName.match(/tile_(\d+)_(\d+)\.laz/);
+  if (!match) throw new Error(`Invalid tile filename: ${fileName}`);
+
+  const r = parseInt(match[1], 10);
+  const c = parseInt(match[2], 10);
+
+  const tMinLat = minLat + r * latStep;
+  const tMaxLat = minLat + (r + 1) * latStep;
+  const tMinLng = minLng + c * lngStep;
+  const tMaxLng = minLng + (c + 1) * lngStep;
+
+  return {
+    map: mapId,
+    bounds: [tMinLat, tMaxLat, tMinLng, tMaxLng],
+    status: "available",
+    imageUrl: `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${tileKey}`,
+    imageName: fileName,
+  };
+});
+
 
         const tiles = await Promise.all(tileUploadPromises);
         const insertedTiles = await Tile.insertMany(tiles);
@@ -332,37 +448,37 @@ exports.getMapStatus = async (req, res) => {
 };
 
 
-// Helper functions
-function calculateOptimalTileSize(bounds, targetTileCount) {
-  const [minLat, maxLat, minLng, maxLng] = bounds;
+// // Helper functions
+// function calculateOptimalTileSize(bounds, targetTileCount) {
+//   const [minLat, maxLat, minLng, maxLng] = bounds;
 
-  if (minLat === maxLat || minLng === maxLng) {
-    return 1000; // Default 1km tiles
-  }
+//   if (minLat === maxLat || minLng === maxLng) {
+//     return 1000; // Default 1km tiles
+//   }
 
-  const area = (maxLat - minLat) * (maxLng - minLng);
-  const tileSize = Math.sqrt(area / targetTileCount) * 1000;
+//   const area = (maxLat - minLat) * (maxLng - minLng);
+//   const tileSize = Math.sqrt(area / targetTileCount) * 1000;
 
-  return tileSize > 0 ? tileSize : 1000;
-}
+//   return tileSize > 0 ? tileSize : 1000;
+// }
 
-// Tile bounds calculation
-function calculateTileBounds(mapBounds, tileIndex, totalTiles) {
-  const [minLat, maxLat, minLng, maxLng] = mapBounds;
-  const cols = Math.ceil(Math.sqrt(totalTiles));
-  const row = Math.floor(tileIndex / cols);
-  const col = tileIndex % cols;
+// // Tile bounds calculation
+// function calculateTileBounds(mapBounds, tileIndex, totalTiles) {
+//   const [minLat, maxLat, minLng, maxLng] = mapBounds;
+//   const cols = Math.ceil(Math.sqrt(totalTiles));
+//   const row = Math.floor(tileIndex / cols);
+//   const col = tileIndex % cols;
 
-  const latStep = (maxLat - minLat) / cols;
-  const lngStep = (maxLng - minLng) / cols;
+//   const latStep = (maxLat - minLat) / cols;
+//   const lngStep = (maxLng - minLng) / cols;
 
-  return [
-    minLat + row * latStep,
-    minLat + (row + 1) * latStep,
-    minLng + col * lngStep,
-    minLng + (col + 1) * lngStep,
-  ];
-}
+//   return [
+//     minLat + row * latStep,
+//     minLat + (row + 1) * latStep,
+//     minLng + col * lngStep,
+//     minLng + (col + 1) * lngStep,
+//   ];
+// }
 exports.getMaps = async (req, res) => {
   try {
     const maps = await Map.find({ uploadedBy: req.user.id }).populate("tiles");

@@ -1,0 +1,10 @@
+{
+  "watch": ["src", "server.js"],
+  "ignore": [
+    "uploads/*",
+    "uploads/lidar/*",
+    "public/potree/*"
+  ],
+  "ext": "js,json",
+  "exec": "node server.js"
+}
