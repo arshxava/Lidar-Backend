@@ -226,23 +226,23 @@ exports.uploadMap = async (req, res) => {
           if (!lazFiles.length) throw new Error("No .laz files found in archive");
           lazInput = path.join(tempDir, lazFiles[0]);
 
-          } else if (fileExt === ".rar") {
-  console.log("📦 Extracting RAR...");
+        } else if (fileExt === ".rar") {
+          console.log("📦 Extracting RAR...");
 
-  const extractor = await Unrar.createExtractorFromData({ data: fileBuffer });
-  const extracted = extractor.extract();
+          const extractor = await Unrar.createExtractorFromData({ data: fileBuffer });
+          const extracted = extractor.extract();
 
-  for (const file of extracted.files) {
-    if (!file.fileHeader.flags.directory) {
-      const filePath = path.join(tempDir, file.fileHeader.name);
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, file.extraction);
-    }
-  }
+          for (const file of extracted.files) {
+            if (!file.fileHeader.flags.directory) {
+              const filePath = path.join(tempDir, file.fileHeader.name);
+              fs.mkdirSync(path.dirname(filePath), { recursive: true });
+              fs.writeFileSync(filePath, file.extraction);
+            }
+          }
 
-  const lazFiles = fs.readdirSync(tempDir).filter((f) => f.endsWith(".laz"));
-  if (!lazFiles.length) throw new Error("No .laz files found in RAR archive");
-  lazInput = path.join(tempDir, lazFiles[0]);
+          const lazFiles = fs.readdirSync(tempDir).filter((f) => f.endsWith(".laz"));
+          if (!lazFiles.length) throw new Error("No .laz files found in RAR archive");
+          lazInput = path.join(tempDir, lazFiles[0]);
 
         } else if (fileExt === ".laz") {
           lazInput = path.join(tempDir, originalName);
@@ -257,36 +257,36 @@ exports.uploadMap = async (req, res) => {
         const tileOutDir = `uploads/lidar/tiles-${mapId}`;
         fs.mkdirSync(tileOutDir, { recursive: true });
 
-      console.log("🧱 Generating exactly 100 tiles...");
+        console.log("🧱 Generating exactly 100 tiles...");
 
-const [minLat, maxLat, minLng, maxLng] = bounds;
-const rows = 10;
-const cols = 10;
+        const [minLat, maxLat, minLng, maxLng] = bounds;
+        const rows = 10;
+        const cols = 10;
 
-const latStep = (maxLat - minLat) / rows;
-const lngStep = (maxLng - minLng) / cols;
+        const latStep = (maxLat - minLat) / rows;
+        const lngStep = (maxLng - minLng) / cols;
 
-for (let r = 0; r < rows; r++) {
-  for (let c = 0; c < cols; c++) {
-    const tMinLat = minLat + r * latStep;
-    const tMaxLat = minLat + (r + 1) * latStep;
-    const tMinLng = minLng + c * lngStep;
-    const tMaxLng = minLng + (c + 1) * lngStep;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const tMinLat = minLat + r * latStep;
+            const tMaxLat = minLat + (r + 1) * latStep;
+            const tMinLng = minLng + c * lngStep;
+            const tMaxLng = minLng + (c + 1) * lngStep;
 
-    const tileFile = path.join(tileOutDir, `tile_${r}_${c}.laz`);
+            const tileFile = path.join(tileOutDir, `tile_${r}_${c}.laz`);
 
-    const pipelineJson = {
-  pipeline: [
-    lazInput,
-    { type: "filters.crop", bounds: `([${tMinLng},${tMaxLng}],[${tMinLat},${tMaxLat}])` },
-    tileFile,
-  ]
-};
+            const pipelineJson = {
+              pipeline: [
+                lazInput,
+                { type: "filters.crop", bounds: `([${tMinLng},${tMaxLng}],[${tMinLat},${tMaxLat}])` },
+                tileFile,
+              ]
+            };
 
-await runPdalPipeline(pipelineJson, mapId, tileFile);
+            await runPdalPipeline(pipelineJson, mapId, tileFile);
 
-  }
-}
+          }
+        }
 
 
         await Map.findByIdAndUpdate(mapId, { progress: 75, status: "uploading_tiles" });
@@ -299,87 +299,87 @@ await runPdalPipeline(pipelineJson, mapId, tileFile);
         console.log("🖼️ Running PotreeConverter:", potreeCmd);
 
         const checkLazHasPoints = (filePath) => {
-  return new Promise((resolve, reject) => {
-    exec(`pdal info --summary "${filePath}"`, (err, stdout, stderr) => {
-      if (err) {
-        console.error(`❌ Failed pdal info for ${filePath}:`, stderr);
-        return resolve(false); // treat errors as "no points"
-      }
-      try {
-        const summary = JSON.parse(stdout);
-        const numPoints = summary?.summary?.num_points || 0;
-        return resolve(numPoints > 0);
-      } catch (e) {
-        console.error(`❌ Failed to parse pdal info for ${filePath}`);
-        return resolve(false);
-      }
-    });
-  });
-};
+          return new Promise((resolve, reject) => {
+            exec(`pdal info --summary "${filePath}"`, (err, stdout, stderr) => {
+              if (err) {
+                console.error(`❌ Failed pdal info for ${filePath}:`, stderr);
+                return resolve(false); // treat errors as "no points"
+              }
+              try {
+                const summary = JSON.parse(stdout);
+                const numPoints = summary?.summary?.num_points || 0;
+                return resolve(numPoints > 0);
+              } catch (e) {
+                console.error(`❌ Failed to parse pdal info for ${filePath}`);
+                return resolve(false);
+              }
+            });
+          });
+        };
 
 
         await uploadDirToSpaces(potreeOutputDir, `lidar/potree/${mapId}`);
         fs.rmSync(potreeOutputDir, { recursive: true, force: true });
-// Step 2b: Potree conversion for each tile
-console.log("🖼️ Running PotreeConverter for each tile...");
+        // Step 2b: Potree conversion for each tile
+        console.log("🖼️ Running PotreeConverter for each tile...");
 
-const potreeTileFiles = fs.readdirSync(tileOutDir).filter(f => f.endsWith(".laz"));
-for (const tileFile of potreeTileFiles) {
-  const tilePath = path.join(tileOutDir, tileFile);
-  const hasPoints = await checkLazHasPoints(tilePath);
+        const potreeTileFiles = fs.readdirSync(tileOutDir).filter(f => f.endsWith(".laz"));
+        for (const tileFile of potreeTileFiles) {
+          const tilePath = path.join(tileOutDir, tileFile);
+          const hasPoints = await checkLazHasPoints(tilePath);
 
-  if (!hasPoints) {
-    console.warn(`⚠️ Skipping ${tileFile} (no points)`);
-    continue;
-  }
+          if (!hasPoints) {
+            console.warn(`⚠️ Skipping ${tileFile} (no points)`);
+            continue;
+          }
 
-  const tileId = path.basename(tileFile, ".laz");
-  const potreeTileOut = path.join(`uploads/lidar/potree-${mapId}`, tileId);
-  fs.mkdirSync(potreeTileOut, { recursive: true });
+          const tileId = path.basename(tileFile, ".laz");
+          const potreeTileOut = path.join(`uploads/lidar/potree-${mapId}`, tileId);
+          fs.mkdirSync(potreeTileOut, { recursive: true });
 
-  const potreeTileCmd = `"C:/Users/Admin/OneDrive/PotreeConverter_windows_x64/PotreeConverter.exe" "${tilePath}" -o "${potreeTileOut}" --generate-page ${tileId}`;
-  console.log(`🖼️ Converting ${tileFile} → Potree...`);
+          const potreeTileCmd = `"C:/Users/Admin/OneDrive/PotreeConverter_windows_x64/PotreeConverter.exe" "${tilePath}" -o "${potreeTileOut}" --generate-page ${tileId}`;
+          console.log(`🖼️ Converting ${tileFile} → Potree...`);
 
-  await new Promise((resolve, reject) => {
-    exec(potreeTileCmd, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`Potree failed for ${tileFile}: ${stderr}`));
-      resolve(stdout);
-    });
-  });
+          await new Promise((resolve, reject) => {
+            exec(potreeTileCmd, (err, stdout, stderr) => {
+              if (err) return reject(new Error(`Potree failed for ${tileFile}: ${stderr}`));
+              resolve(stdout);
+            });
+          });
 
-  await uploadDirToSpaces(potreeTileOut, `lidar/potree/${mapId}/${tileId}`);
-  fs.rmSync(potreeTileOut, { recursive: true, force: true });
-}
+          await uploadDirToSpaces(potreeTileOut, `lidar/potree/${mapId}/${tileId}`);
+          fs.rmSync(potreeTileOut, { recursive: true, force: true });
+        }
 
 
         // Step 3: Upload tiles
-       const tileFiles = fs.readdirSync(tileOutDir);
-const tileUploadPromises = tileFiles.map(async (fileName) => {
-  const tilePath = path.join(tileOutDir, fileName);
-  const tileKey = `lidar/tiles/${mapId}/${fileName}`;
+        const tileFiles = fs.readdirSync(tileOutDir);
+        const tileUploadPromises = tileFiles.map(async (fileName) => {
+          const tilePath = path.join(tileOutDir, fileName);
+          const tileKey = `lidar/tiles/${mapId}/${fileName}`;
 
-  await uploadWithProgress(tilePath, tileKey, mapId);
+          await uploadWithProgress(tilePath, tileKey, mapId);
 
-  // Extract row/col from fileName: tile_3_7.laz
-  const match = fileName.match(/tile_(\d+)_(\d+)\.laz/);
-  if (!match) throw new Error(`Invalid tile filename: ${fileName}`);
+          // Extract row/col from fileName: tile_3_7.laz
+          const match = fileName.match(/tile_(\d+)_(\d+)\.laz/);
+          if (!match) throw new Error(`Invalid tile filename: ${fileName}`);
 
-  const r = parseInt(match[1], 10);
-  const c = parseInt(match[2], 10);
+          const r = parseInt(match[1], 10);
+          const c = parseInt(match[2], 10);
 
-  const tMinLat = minLat + r * latStep;
-  const tMaxLat = minLat + (r + 1) * latStep;
-  const tMinLng = minLng + c * lngStep;
-  const tMaxLng = minLng + (c + 1) * lngStep;
+          const tMinLat = minLat + r * latStep;
+          const tMaxLat = minLat + (r + 1) * latStep;
+          const tMinLng = minLng + c * lngStep;
+          const tMaxLng = minLng + (c + 1) * lngStep;
 
-  return {
-    map: mapId,
-    bounds: [tMinLat, tMaxLat, tMinLng, tMaxLng],
-    status: "available",
-    imageUrl: `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${tileKey}`,
-    imageName: fileName,
-  };
-});
+          return {
+            map: mapId,
+            bounds: [tMinLat, tMaxLat, tMinLng, tMaxLng],
+            status: "available",
+            imageUrl: `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${tileKey}`,
+            imageName: fileName,
+          };
+        });
 
 
         const tiles = await Promise.all(tileUploadPromises);
