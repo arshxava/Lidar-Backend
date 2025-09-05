@@ -13,7 +13,7 @@ const tileSchema = new mongoose.Schema(
     },
       assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   skippedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-
+projectId:[{type: mongoose.Schema.Types.ObjectId, ref: "projects"}],
 annotations: [{ type: mongoose.Schema.Types.ObjectId, ref: "Annotation" }],
   annotatedImageUrl: String,
 submittedAt: Date,
