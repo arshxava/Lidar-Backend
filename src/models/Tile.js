@@ -6,6 +6,7 @@ const tileSchema = new mongoose.Schema(
     imageUrl: { type: String },
     imageName: { type: String },
     bounds: { type: [Number] },
+    viewerUrl: { type: String },
     status: {
       type: String,
       enum: ["available", "in_progress", "completed"],

@@ -6,9 +6,3 @@ const router = express.Router();
 router.post("/ingest", ingestFile);
  
 module.exports=router;
- 
- 
-
- 
- 
- 
